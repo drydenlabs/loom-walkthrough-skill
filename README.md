@@ -70,8 +70,8 @@ loom-fetch https://www.loom.com/share/<your-video-id>
 Watch it work:
 
 ```
-Loom URL:  https://www.loom.com/share/4964ed45cacf4a3fa19435b556b2fafe
-Video ID:  4964ed45cacf4a3fa19435b556b2fafe
+Loom URL:  https://www.loom.com/share/abcdef0123456789abcdef0123456789
+Video ID:  abcdef0123456789abcdef0123456789
 Interval:  every 5s
 Workspace: /Users/you/Downloads/loom-walkthroughs
 
@@ -82,7 +82,7 @@ Workspace: /Users/you/Downloads/loom-walkthroughs
 → Downloading transcript JSON…
   ✓ 27 phrases
 → Downloading .mp4 via yt-dlp…
-  ✓ UniquelyGourmet-…mp4 ( 34M)
+  ✓ MyRecording-abcdef…mp4 ( 34M)
 → Running loom-prep…
   ✓ /Users/you/Downloads/loom-walkthroughs/loom-prep-20260528-162037
 
@@ -142,17 +142,17 @@ The `scaffold.md` Claude reads looks like this:
 
 - Duration: 5m 17s
 - 63 frames at 1 every 5s
-- 3 contact sheet(s) (5×5 grids) at: /Users/.../sheets
-- Individual frames at: /Users/.../
+- 3 contact sheet(s) (5×5 grids) at: /Users/you/.../sheets
+- Individual frames at: /Users/you/.../
 
 **Claude — please examine all contact sheets first for whole-recording context,
 then drill into specific individual frames as needed.**
 
 ### Transcript
 
-[0:00] Hey team, I wanted to process this video for you to go over...
-[0:14] So this is the Sales Rep portal. Uh, overall, the dashboard looks good...
-[0:24] I'm gonna scroll down and just, um, take a look at a couple of things...
+[0:00] Hey team, I'm walking through a few changes I want to make to the dashboard...
+[0:14] First, let me show you the page that needs work...
+[0:24] So if you scroll down here, you can see what I'm talking about...
 ...
 
 ### Frame index
@@ -185,4 +185,4 @@ MIT licensed — fork it, rewrite it in Python, swap `ffmpeg` for something else
 
 ## Credits
 
-Built by [John Dryden Nanna](https://drydenlabs.com) (Dryden Labs) for use across our client engineering work. Inspired by the [Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills) pattern.
+Built by [Dryden Labs](https://drydenlabs.com) for use across our client engineering work. Inspired by the [Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills) pattern.
