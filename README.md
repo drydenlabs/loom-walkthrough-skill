@@ -32,7 +32,7 @@ brew install ffmpeg yt-dlp jq curl
 ### 2. Clone this repo
 
 ```bash
-git clone https://github.com/<your-username>/loom-walkthrough-skill.git
+git clone https://github.com/drydenlabs/loom-walkthrough-skill.git
 cd loom-walkthrough-skill
 ```
 
