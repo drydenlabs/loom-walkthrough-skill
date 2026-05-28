@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+#
+# loom-fetch — one-command Loom-URL → Claude-ready handoff.
+#
+# Given a public Loom share URL, this script:
+#   1. Fetches the share page HTML.
+#   2. Extracts the signed transcript URL (Loom embeds it in the page;
+#      it's a CloudFront-signed CDN URL valid for ~24h).
+#   3. Downloads the transcript JSON and renders it to plain text with
+#      [MM:SS] timestamps per phrase.
+#   4. Uses yt-dlp to download the .mp4 to ~/Downloads/loom-walkthroughs/.
+#   5. Runs loom-prep on the .mp4 (extracts frames + 5×5 contact sheets
+#      + manifest + scaffold).
+#   6. Replaces the scaffold's transcript placeholder with the actual
+#      transcript and copies the final scaffold to your clipboard.
+#   7. Opens the output folder in Finder.
+#
+# Result: paste once into chat with Claude, send, done. No more
+# manual transcript copy, no more "find the file in Downloads".
+#
+# Usage:
+#   loom-fetch <loom-share-url> [interval-seconds]
+#
+# Example:
+#   loom-fetch https://www.loom.com/share/abc123def456...
+#   loom-fetch https://www.loom.com/share/abc123def456... 3   # 1 frame every 3s
+
+set -euo pipefail
+
+usage() {
+    cat <<USAGE
+loom-fetch — Loom URL → Claude-ready handoff in one command
+
+Usage:
+  loom-fetch <loom-share-url> [interval-seconds]
+
+Examples:
+  loom-fetch https://www.loom.com/share/abc123…           # 5s frame interval (default)
+  loom-fetch https://www.loom.com/share/abc123… 3         # 3s frame interval (very dynamic)
+  loom-fetch https://www.loom.com/share/abc123… 10        # 10s frame interval (talking head)
+
+USAGE
+}
+
+if [ $# -lt 1 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+URL="$1"
+INTERVAL="${2:-5}"
+
+# Validate URL shape
+if ! [[ "$URL" =~ ^https?://(www\.)?loom\.com/share/[a-z0-9]+ ]]; then
+    echo "Error: not a Loom share URL." >&2
+    echo "Expected: https://www.loom.com/share/<video-id>" >&2
+    exit 1
+fi
+
+# Pre-flight tool checks
+for tool in curl jq ffmpeg ffprobe yt-dlp; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "Error: required tool '$tool' not installed." >&2
+        case "$tool" in
+            ffmpeg|ffprobe) echo "Install with: brew install ffmpeg" >&2 ;;
+            yt-dlp)         echo "Install with: brew install yt-dlp" >&2 ;;
+            jq)             echo "Install with: brew install jq" >&2 ;;
+        esac
+        exit 1
+    fi
+done
+
+VIDEO_ID=$(echo "$URL" | grep -oE 'share/[a-z0-9]+' | sed 's|share/||')
+PARENT="$HOME/Downloads/loom-walkthroughs"
+mkdir -p "$PARENT"
+STAMP=$(date +%Y%m%d-%H%M%S)
+STAGING="$PARENT/.staging-$STAMP"
+mkdir -p "$STAGING"
+
+USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+
+echo "Loom URL:  $URL"
+echo "Video ID:  $VIDEO_ID"
+echo "Interval:  every ${INTERVAL}s"
+echo "Workspace: $PARENT"
+echo
+
+# ---------- 1. Fetch share page HTML ----------
+echo "→ Fetching share page HTML…"
+curl -sL -A "$USER_AGENT" "$URL" > "$STAGING/page.html"
+if [ ! -s "$STAGING/page.html" ]; then
+    echo "  Error: empty response from Loom." >&2
+    exit 1
+fi
+echo "  ✓ $(wc -c < "$STAGING/page.html") bytes"
+
+# ---------- 2. Extract signed transcript URL ----------
+echo "→ Extracting transcript URL from HTML…"
+TRANSCRIPT_URL=$(grep -oE 'https?://cdn\.loom\.com/[^"\\]*transcription[^"]*\.json[^"]*' "$STAGING/page.html" | head -1 || true)
+if [ -z "$TRANSCRIPT_URL" ]; then
+    echo "  Warning: no signed transcript URL found in the page." >&2
+    echo "  This usually means transcription hasn't finished yet, OR the" >&2
+    echo "  video is private/requires login. Continuing without transcript;" >&2
+    echo "  you'll paste it manually at the end." >&2
+    TRANSCRIPT_TEXT="<transcription not available — paste from Loom UI manually>"
+else
+    echo "  ✓ signed transcript URL extracted"
+
+    # ---------- 3. Fetch + format transcript ----------
+    echo "→ Downloading transcript JSON…"
+    curl -sL "$TRANSCRIPT_URL" > "$STAGING/transcript.json"
+    PHRASE_COUNT=$(jq '.phrases | length' "$STAGING/transcript.json" 2>/dev/null || echo 0)
+    if [ "$PHRASE_COUNT" -eq 0 ]; then
+        echo "  Warning: transcript JSON empty or malformed." >&2
+        TRANSCRIPT_TEXT="<transcription empty — paste from Loom UI manually>"
+    else
+        echo "  ✓ $PHRASE_COUNT phrases"
+        # Convert phrases[] → plain text with [MM:SS] prefixes per phrase.
+        TRANSCRIPT_TEXT=$(jq -r '
+          .phrases[] |
+          ((.ts | floor) as $sec |
+            "[\(($sec / 60) | floor)" + ":" +
+            (if ($sec % 60) < 10 then "0\($sec % 60)" else "\($sec % 60)" end) + "] " +
+            .value)
+        ' "$STAGING/transcript.json")
+    fi
+fi
+
+# ---------- 4. Download the .mp4 ----------
+echo "→ Downloading .mp4 via yt-dlp…"
+# Slug the title so filenames are friendly.
+yt-dlp --quiet --no-warnings \
+    -o "$STAGING/%(title)s-%(id)s.%(ext)s" \
+    "$URL" 2>&1 || {
+    echo "  Error: yt-dlp failed." >&2
+    exit 1
+}
+MP4=$(ls "$STAGING"/*.mp4 2>/dev/null | head -1)
+if [ -z "$MP4" ]; then
+    echo "  Error: no .mp4 produced by yt-dlp." >&2
+    exit 1
+fi
+MP4_SIZE=$(du -h "$MP4" | cut -f1)
+echo "  ✓ $(basename "$MP4") ($MP4_SIZE)"
+
+# ---------- 5. Run loom-prep on the downloaded .mp4 ----------
+# loom-prep writes its own loom-prep-<stamp>/ directory inside the parent.
+echo "→ Running loom-prep…"
+LOOM_PREP_OUT=$(loom-prep "$MP4" "$INTERVAL" 2>&1 | tee "$STAGING/loom-prep.log" | grep -oE "$PARENT/loom-prep-[0-9-]+" | head -1)
+if [ -z "$LOOM_PREP_OUT" ] || [ ! -d "$LOOM_PREP_OUT" ]; then
+    echo "  Error: loom-prep didn't produce an output dir." >&2
+    cat "$STAGING/loom-prep.log" >&2
+    exit 1
+fi
+echo "  ✓ $LOOM_PREP_OUT"
+
+# Move the downloaded mp4 INTO the loom-prep output dir so everything
+# for this recording lives in one folder.
+mv "$MP4" "$LOOM_PREP_OUT/"
+# Save the transcript JSON next to it for reference.
+[ -f "$STAGING/transcript.json" ] && mv "$STAGING/transcript.json" "$LOOM_PREP_OUT/transcript.json"
+# Tear down the staging directory.
+rm -rf "$STAGING"
+
+# ---------- 6. Rewrite scaffold with transcript pre-filled ----------
+SCAFFOLD="$LOOM_PREP_OUT/scaffold.md"
+if [ -f "$SCAFFOLD" ]; then
+    # Replace the placeholder line with the actual transcript text via
+    # python3 (handles multi-line replacements cleanly — awk and sed
+    # both struggle with newlines in substitution text).
+    PLACEHOLDER='<paste Loom transcript here — sidebar → Transcript → Copy>'
+    # Write transcript text to a temp file so we don't have to encode it
+    # as a Python string argument with all the escaping headaches.
+    TMP_TRANSCRIPT=$(mktemp)
+    printf '%s' "$TRANSCRIPT_TEXT" > "$TMP_TRANSCRIPT"
+    python3 - "$SCAFFOLD" "$TMP_TRANSCRIPT" "$PLACEHOLDER" "$URL" <<'PYEOF'
+import sys, pathlib
+scaffold_path, transcript_path, placeholder, source_url = sys.argv[1:5]
+content = pathlib.Path(scaffold_path).read_text()
+transcript = pathlib.Path(transcript_path).read_text().rstrip()
+content = content.replace(placeholder, transcript)
+# Prepend a one-line source-URL note so the scaffold ties back to the
+# original Loom video at the top.
+content = f"> Source: {source_url}\n\n" + content
+pathlib.Path(scaffold_path).write_text(content)
+PYEOF
+    rm -f "$TMP_TRANSCRIPT"
+
+    # Copy the now-complete scaffold to clipboard.
+    if command -v pbcopy >/dev/null 2>&1; then
+        pbcopy < "$SCAFFOLD"
+        CLIPBOARD_NOTE="✓ scaffold.md copied to clipboard — paste into chat with Claude."
+    else
+        CLIPBOARD_NOTE="(pbcopy missing — open $SCAFFOLD manually and copy.)"
+    fi
+else
+    CLIPBOARD_NOTE="⚠ scaffold.md missing from loom-prep output."
+fi
+
+# ---------- 7. Done ----------
+echo
+echo "=========================================="
+echo "  Done."
+echo "  Folder:    $LOOM_PREP_OUT"
+echo "  $CLIPBOARD_NOTE"
+echo "=========================================="
+open "$LOOM_PREP_OUT" >/dev/null 2>&1 || true

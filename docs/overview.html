@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loom → Claude Code: my no-spec workflow</title>
+<style>
+  :root {
+    --green: #016749;
+    --green-soft: #ecf6f1;
+    --ink: #101828;
+    --ink-soft: #475467;
+    --rule: #e5e7eb;
+    --bg: #fafaf7;
+    --code-bg: #0f172a;
+    --code-fg: #e2e8f0;
+    --code-muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+    font-size: 16px;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 28px 96px;
+  }
+  header.hero {
+    border-left: 4px solid var(--green);
+    padding: 0 0 0 18px;
+    margin-bottom: 40px;
+  }
+  header.hero .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--green);
+    margin: 0 0 10px;
+  }
+  header.hero h1 {
+    font-size: 30px;
+    line-height: 1.25;
+    margin: 0 0 12px;
+    color: var(--ink);
+    font-weight: 800;
+  }
+  header.hero p.lede {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 17px;
+  }
+  h2 {
+    font-size: 20px;
+    margin: 44px 0 12px;
+    color: var(--ink);
+    font-weight: 700;
+  }
+  h2 .num {
+    display: inline-block;
+    background: var(--green);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 9px;
+    vertical-align: 3px;
+    margin-right: 10px;
+    letter-spacing: 0.04em;
+  }
+  h3 {
+    font-size: 15px;
+    margin: 26px 0 10px;
+    color: var(--ink);
+    font-weight: 700;
+  }
+  p { margin: 0 0 14px; }
+  ul { padding-left: 22px; margin: 0 0 18px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--ink); }
+  em { color: var(--green); font-style: normal; font-weight: 600; }
+  .pull {
+    background: var(--green-soft);
+    border-left: 3px solid var(--green);
+    padding: 14px 18px;
+    margin: 18px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 15px;
+  }
+  .pull strong { color: var(--green); }
+  code, pre {
+    font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    font-size: 13px;
+  }
+  code {
+    background: rgba(1, 103, 73, 0.08);
+    color: var(--green);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 18px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 14px 0 22px;
+    line-height: 1.55;
+    max-height: 480px;
+    overflow-y: auto;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  pre .c { color: var(--code-muted); }
+  .code-wrap {
+    position: relative;
+    margin: 14px 0 22px;
+  }
+  .code-wrap pre { margin: 0; }
+  .code-label {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: rgba(255,255,255,0.08);
+    color: var(--code-muted);
+    font-family: "SF Mono", monospace;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .step-list {
+    list-style: none;
+    padding: 0;
+    margin: 18px 0 26px;
+    counter-reset: step;
+  }
+  .step-list li {
+    position: relative;
+    padding: 12px 0 12px 38px;
+    border-bottom: 1px solid var(--rule);
+    counter-increment: step;
+  }
+  .step-list li:last-child { border-bottom: 0; }
+  .step-list li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 14px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--green);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .takeaways {
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 28px 0;
+  }
+  .takeaways h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    color: var(--green);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .takeaways ul { margin: 0; }
+  .toc {
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin: 20px 0 32px;
+    font-size: 14px;
+  }
+  .toc strong {
+    display: block;
+    color: var(--green);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+  .toc ol {
+    margin: 0;
+    padding-left: 22px;
+    color: var(--ink-soft);
+  }
+  .toc ol li { margin-bottom: 4px; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--green); text-decoration: underline; }
+  footer.foot {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  footer.foot a { color: var(--green); text-decoration: none; }
+  footer.foot a:hover { text-decoration: underline; }
+  a { color: var(--green); }
+  hr.soft { border: 0; border-top: 1px solid var(--rule); margin: 36px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">Workflow Field Note</p>
+    <h1>I built a Claude Code skill that turns my Loom walkthroughs into shipped code</h1>
+    <p class="lede">A short tour of how I describe UI changes by talking to a screen recording instead of writing specs — and how Claude Code does the rest. Both scripts are in this post — copy, paste, ship.</p>
+  </header>
+
+  <div class="toc">
+    <strong>In this post</strong>
+    <ol>
+      <li><a href="#problem">The problem with written specs</a></li>
+      <li><a href="#bridge">The bridge — a Claude Code skill</a></li>
+      <li><a href="#handoff">The handoff to Claude</a></li>
+      <li><a href="#example">What this looked like today</a></li>
+      <li><a href="#steal">Steal the scripts (full source)</a></li>
+      <li><a href="#install">5-minute install</a></li>
+      <li><a href="#tips">How to build your own</a></li>
+    </ol>
+  </div>
+
+  <h2 id="problem"><span class="num">1</span>The problem with written specs</h2>
+  <p>I run an agency and a few products. When something needs to change on a screen — a layout tweak, a renamed button, a new column on a table — I used to write a Linear ticket or a Slack message. Those messages were always slow to write, lossy by the time the dev read them, and almost always required follow-up questions.</p>
+  <p>Talking through the same change on a 5-minute Loom is <em>much</em> faster. The catch: a voice walkthrough doesn't slot into an AI coding assistant directly. The model can't watch a video; it can only read.</p>
+
+  <h2 id="bridge"><span class="num">2</span>The bridge — a Claude Code skill</h2>
+  <p>So I built a Claude Code <strong>skill</strong> that turns a Loom into something Claude can read. One command, end-to-end:</p>
+
+  <div class="code-wrap">
+    <span class="code-label">terminal</span>
+<pre><code>loom-fetch https://www.loom.com/share/&lt;video-id&gt;</code></pre>
+  </div>
+
+  <p>Under the hood the skill does five things:</p>
+  <ul class="step-list">
+    <li>Scrapes the share page HTML and extracts the signed transcript URL.</li>
+    <li>Downloads the transcript JSON (timestamps + phrases).</li>
+    <li>Downloads the underlying <code>.mp4</code> via <code>yt-dlp</code>.</li>
+    <li>Samples one frame every N seconds and renders contact-sheet collages (5×5 grids).</li>
+    <li>Writes a <code>scaffold.md</code> file: a single markdown document with the transcript, frame index, and pointers to the contact sheets. Path lands in your clipboard.</li>
+  </ul>
+
+  <div class="pull">
+    <strong>Why contact sheets?</strong> Twenty-five frames on one image gives Claude a fast read of the entire recording's arc. It can then drill into individual frames as needed — the same way a director scans a storyboard before zooming into one shot.
+  </div>
+
+  <h2 id="handoff"><span class="num">3</span>The handoff to Claude</h2>
+  <p>I paste the path into Claude Code and say "process this." Claude reads <code>scaffold.md</code>, opens the contact sheets, and now has both <strong>what I said</strong> (the transcript with timestamps) and <strong>what was on the screen at each moment</strong> (the frames).</p>
+  <p>From there it plans the edits, asks any clarifying questions, and ships the code.</p>
+
+  <h2 id="example"><span class="num">4</span>What this looked like today</h2>
+  <p>Earlier I needed to redesign the Sales Rep dashboard of one of my client apps to mirror patterns we shipped last week on the Customer Portal. Instead of writing it up, I recorded a 5m17s Loom walking through the rep view with my customer view open in another tab as reference.</p>
+  <p>I ran <code>loom-fetch</code>, pasted the path, and Claude produced a clean spec covering six concrete changes (KPI tile coloring, right-rail restructure, a new Recent Orders block with a rep-specific Customer Name column, drawer-based View actions, a Reorder action, and a scroll-fix on the offcanvas drawer). Zero written spec on my end.</p>
+  <p>Then it shipped them.</p>
+
+  <hr class="soft">
+
+  <h2 id="steal"><span class="num">5</span>Steal the scripts</h2>
+  <p>Two bash files. Both self-contained. Below in full, ready to copy.</p>
+
+  <h3>5a. <code>loom-fetch</code> — the one-command entry point</h3>
+  <p>Takes a Loom share URL, does everything end-to-end, drops the scaffold on your clipboard.</p>
+
+  <div class="code-wrap">
+    <span class="code-label">~/bin/loom-fetch</span>
+<pre><code>#!/usr/bin/env bash
+#
+# loom-fetch — one-command Loom-URL → Claude-ready handoff.
+#
+# Given a public Loom share URL, this script:
+#   1. Fetches the share page HTML.
+#   2. Extracts the signed transcript URL (Loom embeds it in the page;
+#      it's a CloudFront-signed CDN URL valid for ~24h).
+#   3. Downloads the transcript JSON and renders it to plain text with
+#      [MM:SS] timestamps per phrase.
+#   4. Uses yt-dlp to download the .mp4 to ~/Downloads/loom-walkthroughs/.
+#   5. Runs loom-prep on the .mp4 (extracts frames + 5×5 contact sheets
+#      + manifest + scaffold).
+#   6. Replaces the scaffold's transcript placeholder with the actual
+#      transcript and copies the final scaffold to your clipboard.
+#   7. Opens the output folder in Finder.
+#
+# Result: paste once into chat with Claude, send, done.
+#
+# Usage:
+#   loom-fetch &lt;loom-share-url&gt; [interval-seconds]
+
+set -euo pipefail
+
+usage() {
+    cat &lt;&lt;USAGE
+loom-fetch — Loom URL → Claude-ready handoff in one command
+
+Usage:
+  loom-fetch &lt;loom-share-url&gt; [interval-seconds]
+
+Examples:
+  loom-fetch https://www.loom.com/share/abc123…           # 5s frame interval (default)
+  loom-fetch https://www.loom.com/share/abc123… 3         # 3s frame interval (very dynamic)
+  loom-fetch https://www.loom.com/share/abc123… 10        # 10s frame interval (talking head)
+
+USAGE
+}
+
+if [ $# -lt 1 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+URL="$1"
+INTERVAL="${2:-5}"
+
+# Validate URL shape
+if ! [[ "$URL" =~ ^https?://(www\.)?loom\.com/share/[a-z0-9]+ ]]; then
+    echo "Error: not a Loom share URL." &gt;&amp;2
+    echo "Expected: https://www.loom.com/share/&lt;video-id&gt;" &gt;&amp;2
+    exit 1
+fi
+
+# Pre-flight tool checks
+for tool in curl jq ffmpeg ffprobe yt-dlp; do
+    if ! command -v "$tool" &gt;/dev/null 2&gt;&amp;1; then
+        echo "Error: required tool '$tool' not installed." &gt;&amp;2
+        case "$tool" in
+            ffmpeg|ffprobe) echo "Install with: brew install ffmpeg" &gt;&amp;2 ;;
+            yt-dlp)         echo "Install with: brew install yt-dlp" &gt;&amp;2 ;;
+            jq)             echo "Install with: brew install jq" &gt;&amp;2 ;;
+        esac
+        exit 1
+    fi
+done
+
+VIDEO_ID=$(echo "$URL" | grep -oE 'share/[a-z0-9]+' | sed 's|share/||')
+PARENT="$HOME/Downloads/loom-walkthroughs"
+mkdir -p "$PARENT"
+STAMP=$(date +%Y%m%d-%H%M%S)
+STAGING="$PARENT/.staging-$STAMP"
+mkdir -p "$STAGING"
+
+USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+
+echo "Loom URL:  $URL"
+echo "Video ID:  $VIDEO_ID"
+echo "Interval:  every ${INTERVAL}s"
+echo "Workspace: $PARENT"
+echo
+
+# ---------- 1. Fetch share page HTML ----------
+echo "→ Fetching share page HTML…"
+curl -sL -A "$USER_AGENT" "$URL" &gt; "$STAGING/page.html"
+if [ ! -s "$STAGING/page.html" ]; then
+    echo "  Error: empty response from Loom." &gt;&amp;2
+    exit 1
+fi
+echo "  ✓ $(wc -c &lt; "$STAGING/page.html") bytes"
+
+# ---------- 2. Extract signed transcript URL ----------
+echo "→ Extracting transcript URL from HTML…"
+TRANSCRIPT_URL=$(grep -oE 'https?://cdn\.loom\.com/[^"\\]*transcription[^"]*\.json[^"]*' "$STAGING/page.html" | head -1 || true)
+if [ -z "$TRANSCRIPT_URL" ]; then
+    echo "  Warning: no signed transcript URL found." &gt;&amp;2
+    TRANSCRIPT_TEXT="&lt;transcription not available — paste from Loom UI manually&gt;"
+else
+    echo "  ✓ signed transcript URL extracted"
+
+    # ---------- 3. Fetch + format transcript ----------
+    echo "→ Downloading transcript JSON…"
+    curl -sL "$TRANSCRIPT_URL" &gt; "$STAGING/transcript.json"
+    PHRASE_COUNT=$(jq '.phrases | length' "$STAGING/transcript.json" 2&gt;/dev/null || echo 0)
+    if [ "$PHRASE_COUNT" -eq 0 ]; then
+        TRANSCRIPT_TEXT="&lt;transcription empty — paste from Loom UI manually&gt;"
+    else
+        echo "  ✓ $PHRASE_COUNT phrases"
+        # Convert phrases[] → plain text with [MM:SS] prefixes per phrase.
+        TRANSCRIPT_TEXT=$(jq -r '
+          .phrases[] |
+          ((.ts | floor) as $sec |
+            "[\(($sec / 60) | floor)" + ":" +
+            (if ($sec % 60) &lt; 10 then "0\($sec % 60)" else "\($sec % 60)" end) + "] " +
+            .value)
+        ' "$STAGING/transcript.json")
+    fi
+fi
+
+# ---------- 4. Download the .mp4 ----------
+echo "→ Downloading .mp4 via yt-dlp…"
+yt-dlp --quiet --no-warnings \
+    -o "$STAGING/%(title)s-%(id)s.%(ext)s" \
+    "$URL" 2&gt;&amp;1 || {
+    echo "  Error: yt-dlp failed." &gt;&amp;2
+    exit 1
+}
+MP4=$(ls "$STAGING"/*.mp4 2&gt;/dev/null | head -1)
+[ -z "$MP4" ] &amp;&amp; { echo "  Error: no .mp4 produced." &gt;&amp;2; exit 1; }
+MP4_SIZE=$(du -h "$MP4" | cut -f1)
+echo "  ✓ $(basename "$MP4") ($MP4_SIZE)"
+
+# ---------- 5. Run loom-prep on the downloaded .mp4 ----------
+echo "→ Running loom-prep…"
+LOOM_PREP_OUT=$(loom-prep "$MP4" "$INTERVAL" 2&gt;&amp;1 | tee "$STAGING/loom-prep.log" | grep -oE "$PARENT/loom-prep-[0-9-]+" | head -1)
+if [ -z "$LOOM_PREP_OUT" ] || [ ! -d "$LOOM_PREP_OUT" ]; then
+    echo "  Error: loom-prep didn't produce an output dir." &gt;&amp;2
+    cat "$STAGING/loom-prep.log" &gt;&amp;2
+    exit 1
+fi
+echo "  ✓ $LOOM_PREP_OUT"
+
+# Consolidate artifacts in one folder.
+mv "$MP4" "$LOOM_PREP_OUT/"
+[ -f "$STAGING/transcript.json" ] &amp;&amp; mv "$STAGING/transcript.json" "$LOOM_PREP_OUT/transcript.json"
+rm -rf "$STAGING"
+
+# ---------- 6. Rewrite scaffold with transcript pre-filled ----------
+SCAFFOLD="$LOOM_PREP_OUT/scaffold.md"
+if [ -f "$SCAFFOLD" ]; then
+    PLACEHOLDER='&lt;paste Loom transcript here — sidebar → Transcript → Copy&gt;'
+    TMP_TRANSCRIPT=$(mktemp)
+    printf '%s' "$TRANSCRIPT_TEXT" &gt; "$TMP_TRANSCRIPT"
+    python3 - "$SCAFFOLD" "$TMP_TRANSCRIPT" "$PLACEHOLDER" "$URL" &lt;&lt;'PYEOF'
+import sys, pathlib
+scaffold_path, transcript_path, placeholder, source_url = sys.argv[1:5]
+content = pathlib.Path(scaffold_path).read_text()
+transcript = pathlib.Path(transcript_path).read_text().rstrip()
+content = content.replace(placeholder, transcript)
+content = f"&gt; Source: {source_url}\n\n" + content
+pathlib.Path(scaffold_path).write_text(content)
+PYEOF
+    rm -f "$TMP_TRANSCRIPT"
+
+    if command -v pbcopy &gt;/dev/null 2&gt;&amp;1; then
+        pbcopy &lt; "$SCAFFOLD"
+        CLIPBOARD_NOTE="✓ scaffold.md copied to clipboard — paste into chat with Claude."
+    else
+        CLIPBOARD_NOTE="(pbcopy missing — open $SCAFFOLD manually and copy.)"
+    fi
+else
+    CLIPBOARD_NOTE="⚠ scaffold.md missing from loom-prep output."
+fi
+
+echo
+echo "=========================================="
+echo "  Done."
+echo "  Folder:    $LOOM_PREP_OUT"
+echo "  $CLIPBOARD_NOTE"
+echo "=========================================="
+open "$LOOM_PREP_OUT" &gt;/dev/null 2&gt;&amp;1 || true
+</code></pre>
+  </div>
+
+  <h3>5b. <code>loom-prep</code> — the frame extractor + scaffold writer</h3>
+  <p><code>loom-fetch</code> calls this. You can also run it directly against any <code>.mp4</code> on disk (handy when you have a recording but no Loom share URL).</p>
+
+  <div class="code-wrap">
+    <span class="code-label">~/bin/loom-prep</span>
+<pre><code>#!/usr/bin/env bash
+#
+# loom-prep — extract frames + transcript scaffolding from a Loom .mp4
+#
+# Workflow:
+#   1. Record a Loom video, narrate clearly while you click through.
+#   2. Download the .mp4 from Loom.
+#   3. Run: loom-prep ~/Downloads/&lt;your-loom-file&gt;.mp4
+#   4. Script extracts one frame every 5s, builds 5×5 contact sheets,
+#      writes a manifest, and copies a paste-ready scaffold to your
+#      clipboard.
+#
+# Usage:
+#   loom-prep &lt;path-to-mp4&gt; [interval-seconds]
+#
+# Output:
+#   ~/Downloads/loom-walkthroughs/loom-prep-YYYYMMDD-HHMMSS/
+#       frame_001.jpg, frame_002.jpg, …       individual frames
+#       sheets/sheet_001_frames_001-025.jpg   5×5 contact sheets
+#       manifest.md                           timestamps for each frame
+#       scaffold.md                           paste-to-Claude block
+
+set -euo pipefail
+
+usage() {
+    cat &lt;&lt;USAGE
+loom-prep — extract frames from a Loom .mp4 for chat handoff
+
+Usage:
+  loom-prep &lt;path-to-mp4&gt; [interval-seconds]
+
+USAGE
+}
+
+if [ $# -lt 1 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+INPUT="$1"
+INTERVAL="${2:-5}"
+
+[ ! -f "$INPUT" ] &amp;&amp; { echo "Error: file not found: $INPUT" &gt;&amp;2; exit 1; }
+command -v ffmpeg &gt;/dev/null 2&gt;&amp;1 || { echo "Error: ffmpeg not installed. brew install ffmpeg" &gt;&amp;2; exit 1; }
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+PARENT="$HOME/Downloads/loom-walkthroughs"
+mkdir -p "$PARENT"
+OUTDIR="$PARENT/loom-prep-$STAMP"
+mkdir -p "$OUTDIR"
+
+DURATION_RAW=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT" 2&gt;/dev/null || echo "0")
+DURATION=${DURATION_RAW%.*}
+[ -z "$DURATION" ] &amp;&amp; DURATION=0
+DUR_MIN=$((DURATION / 60))
+DUR_SEC=$((DURATION % 60))
+
+echo "Video:    $(basename "$INPUT")"
+echo "Duration: ${DUR_MIN}m ${DUR_SEC}s (${DURATION}s)"
+echo "Interval: every ${INTERVAL}s"
+echo "Output:   $OUTDIR"
+echo
+echo "Extracting frames…"
+
+ffmpeg -hide_banner -loglevel error -i "$INPUT" \
+    -vf "fps=1/${INTERVAL}" \
+    -q:v 4 \
+    "$OUTDIR/frame_%03d.jpg"
+
+FRAME_COUNT=$(ls "$OUTDIR"/frame_*.jpg 2&gt;/dev/null | wc -l | tr -d ' ')
+echo "✓ Extracted $FRAME_COUNT frames."
+echo
+
+# ---------- contact sheets ----------
+# 5×5 grid per sheet (up to 25 frames), thumbnails ~480×270.
+# Staging symlinks per sheet so ffmpeg's image2 demuxer reads only the
+# frames for that sheet (it can't be told "stop at N" inline).
+SHEET_DIR="$OUTDIR/sheets"
+mkdir -p "$SHEET_DIR"
+PER_SHEET=25
+SHEET_NUM=1
+START=1
+echo "Building contact sheets (5×5 grid, up to ${PER_SHEET} frames each)…"
+while [ $START -le $FRAME_COUNT ]; do
+    END=$(( START + PER_SHEET - 1 ))
+    [ $END -gt $FRAME_COUNT ] &amp;&amp; END=$FRAME_COUNT
+    COUNT=$((END - START + 1))
+    SHEET_PATH="$SHEET_DIR/sheet_$(printf "%03d" $SHEET_NUM)_frames_$(printf "%03d" $START)-$(printf "%03d" $END).jpg"
+
+    STAGE=$(mktemp -d)
+    j=1
+    for src_num in $(seq $START $END); do
+        ln -s "$OUTDIR/$(printf 'frame_%03d.jpg' $src_num)" "$STAGE/$(printf 'in_%03d.jpg' $j)"
+        j=$((j + 1))
+    done
+
+    ffmpeg -hide_banner -loglevel error \
+        -i "$STAGE/in_%03d.jpg" \
+        -vf "scale=480:-1,tile=5x5:nb_frames=${COUNT}:color=black" \
+        -frames:v 1 \
+        -q:v 4 \
+        "$SHEET_PATH"
+    rm -rf "$STAGE"
+
+    echo "  ✓ sheet $(printf "%03d" $SHEET_NUM): frames ${START}-${END}"
+    SHEET_NUM=$((SHEET_NUM + 1))
+    START=$((END + 1))
+done
+SHEET_COUNT=$(ls "$SHEET_DIR"/sheet_*.jpg 2&gt;/dev/null | wc -l | tr -d ' ')
+echo "✓ Built $SHEET_COUNT contact sheet(s)"
+echo
+
+# ---------- manifest.md ----------
+MANIFEST="$OUTDIR/manifest.md"
+{
+    echo "# Loom walkthrough — $(basename "$INPUT")"
+    echo
+    echo "- Source: \`$INPUT\`"
+    echo "- Duration: ${DUR_MIN}m ${DUR_SEC}s"
+    echo "- Frame interval: every ${INTERVAL}s"
+    echo "- Frame count: $FRAME_COUNT"
+    echo
+    echo "## Frames with timestamps"
+    echo
+    echo "| # | Timestamp | Path |"
+    echo "|---|---|---|"
+} &gt; "$MANIFEST"
+
+i=1
+for FRAME in "$OUTDIR"/frame_*.jpg; do
+    OFFSET=$(( (i - 1) * INTERVAL ))
+    MM=$(printf "%02d" $((OFFSET / 60)))
+    SS=$(printf "%02d" $((OFFSET % 60)))
+    echo "| $(printf "%03d" $i) | ${MM}:${SS} | \`$(basename "$FRAME")\` |" &gt;&gt; "$MANIFEST"
+    i=$((i + 1))
+done
+
+# ---------- scaffold.md (paste-to-Claude) ----------
+SCAFFOLD="$OUTDIR/scaffold.md"
+{
+    echo "## Loom walkthrough — $(basename "$INPUT")"
+    echo
+    echo "- Duration: ${DUR_MIN}m ${DUR_SEC}s"
+    echo "- $FRAME_COUNT frames at 1 every ${INTERVAL}s"
+    echo "- $SHEET_COUNT contact sheet(s) (5×5 grids) at: \`$SHEET_DIR\`"
+    echo "- Individual frames at: \`$OUTDIR\`"
+    echo
+    echo "**Claude — please examine all contact sheets first for whole-recording context, then drill into specific individual frames as needed.**"
+    echo
+    echo "### Transcript"
+    echo
+    echo "&lt;paste Loom transcript here — sidebar → Transcript → Copy&gt;"
+    echo
+    echo "### Frame index"
+    echo
+    i=1
+    for FRAME in "$OUTDIR"/frame_*.jpg; do
+        OFFSET=$(( (i - 1) * INTERVAL ))
+        MM=$(printf "%02d" $((OFFSET / 60)))
+        SS=$(printf "%02d" $((OFFSET % 60)))
+        echo "- ${MM}:${SS}  \`$(basename "$FRAME")\`"
+        i=$((i + 1))
+    done
+} &gt; "$SCAFFOLD"
+
+if command -v pbcopy &gt;/dev/null 2&gt;&amp;1; then
+    pbcopy &lt; "$SCAFFOLD"
+    CLIPBOARD_NOTE="✓ scaffold.md copied to clipboard — paste into chat."
+else
+    CLIPBOARD_NOTE="(pbcopy not found — open $SCAFFOLD manually and copy.)"
+fi
+
+echo
+echo "  manifest:  $MANIFEST"
+echo "  scaffold:  $SCAFFOLD"
+echo "  $CLIPBOARD_NOTE"
+open "$OUTDIR" &gt;/dev/null 2&gt;&amp;1 || true
+</code></pre>
+  </div>
+
+  <hr class="soft">
+
+  <h2 id="install"><span class="num">6</span>5-minute install</h2>
+  <p>macOS instructions. Linux is nearly identical (skip <code>pbcopy</code> → use <code>xclip</code> or <code>wl-copy</code>).</p>
+
+  <h3>1. Install the four CLI tools</h3>
+  <div class="code-wrap">
+    <span class="code-label">terminal</span>
+<pre><code>brew install ffmpeg yt-dlp jq curl</code></pre>
+  </div>
+
+  <h3>2. Save both scripts to your PATH</h3>
+  <p>If <code>~/bin</code> isn't already on your PATH, the second line adds it. Restart your shell after.</p>
+  <div class="code-wrap">
+    <span class="code-label">terminal</span>
+<pre><code>mkdir -p ~/bin
+# (paste loom-fetch into ~/bin/loom-fetch and loom-prep into ~/bin/loom-prep)
+chmod +x ~/bin/loom-fetch ~/bin/loom-prep
+echo 'export PATH="$HOME/bin:$PATH"' &gt;&gt; ~/.zshrc
+source ~/.zshrc</code></pre>
+  </div>
+
+  <h3>3. Run it on any public Loom</h3>
+  <div class="code-wrap">
+    <span class="code-label">terminal</span>
+<pre><code>loom-fetch https://www.loom.com/share/&lt;your-video-id&gt;</code></pre>
+  </div>
+
+  <p>The scaffold lands on your clipboard. Open Claude Code (or claude.ai), paste, hit send. The model now has your full walkthrough as readable context.</p>
+
+  <div class="pull">
+    <strong>Tip on the frame interval.</strong> The second argument controls how often a frame is sampled. Default is every 5 seconds (good for screen recordings). Bump to 10–15 for talking-head recordings; drop to 2–3 for fast-moving demos. More frames = more context, but bigger contact sheets.
+  </div>
+
+  <hr class="soft">
+
+  <h2 id="tips"><span class="num">7</span>How to build your own</h2>
+  <p>Claude Code Skills are basically a folder with a <code>SKILL.md</code> file describing what the skill does + the supporting scripts that do it. On my machine this skill lives at <code>~/Developer/os/skills/loom-walkthrough/</code>. Anthropic's docs cover the broader shape if you want to wire yours into Claude Code as a registered skill instead of just plain shell scripts on PATH.</p>
+  <p>Three pieces of advice if you want to build something similar:</p>
+  <ul>
+    <li><strong>Start with one command that does one thing well.</strong> My first version of <code>loom-fetch</code> only downloaded the transcript. The frames + contact sheets came later as I noticed Claude needed visual context too.</li>
+    <li><strong>Lean on existing tools.</strong> <code>yt-dlp</code> handles the download. <code>ffmpeg</code> samples the frames. <code>jq</code> parses the transcript JSON. The skill is mostly glue.</li>
+    <li><strong>Optimize for clipboard.</strong> The skill ends by copying the scaffold path so I can paste it into Claude with one keystroke. Tiny detail, huge ergonomic upgrade.</li>
+  </ul>
+
+  <div class="takeaways">
+    <h3>Takeaway</h3>
+    <ul>
+      <li>You can talk to a recording instead of writing specs.</li>
+      <li>Voice + visuals together gives the AI more signal than either one alone.</li>
+      <li>A 200-line bash skill can save hours per week.</li>
+    </ul>
+  </div>
+
+  <footer class="foot">
+    <p>Written by John Dryden Nanna · Dryden Labs · 2026</p>
+    <p>Steal anything useful here. If you build your own version, ping me — I'd love to see what you ship.</p>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# loom-prep — extract frames + transcript scaffolding from a Loom .mp4
+#
+# Workflow:
+#   1. Record a Loom video, narrate clearly while you click through.
+#   2. After upload + auto-transcription, click Download in Loom → .mp4
+#      lands in ~/Downloads.
+#   3. Run: loom-prep ~/Downloads/<your-loom-file>.mp4
+#   4. Script extracts one frame every 5s into a timestamped folder,
+#      writes a manifest, and copies a paste-ready scaffold to your
+#      clipboard so you can drop it into chat with Claude.
+#   5. In Loom's web UI, copy the transcript (sidebar → Transcript →
+#      Copy) and paste it into the scaffold's [paste transcript here]
+#      slot before sending to Claude.
+#
+# Usage:
+#   loom-prep <path-to-mp4> [interval-seconds]
+#
+# Defaults:
+#   interval = 5 seconds (tuned for dynamic screen changes; bump up
+#              to 10/15 if the recording is mostly talking head)
+#
+# Output:
+#   ~/Downloads/loom-prep-YYYYMMDD-HHMMSS/
+#       frame_001.jpg, frame_002.jpg, …                  individual frames (full res)
+#       sheets/sheet_001_frames_001-025.jpg, …           5×5 contact sheets
+#       manifest.md                                      timestamps for each frame
+#       scaffold.md                                      paste-to-Claude block
+#
+# Claude scans contact sheets first for whole-recording context, then
+# drills into individual frames when detail is needed. No frames are
+# filtered out — everything is examinable.
+
+set -euo pipefail
+
+usage() {
+    cat <<USAGE
+loom-prep — extract frames from a Loom .mp4 for chat handoff
+
+Usage:
+  loom-prep <path-to-mp4> [interval-seconds]
+
+Examples:
+  loom-prep ~/Downloads/Orders-walkthrough.mp4         # default: 1 frame every 5s
+  loom-prep ~/Downloads/Orders-walkthrough.mp4 10      # 1 frame every 10s
+  loom-prep ~/Downloads/Orders-walkthrough.mp4 3       # 1 frame every 3s (very dynamic)
+
+USAGE
+}
+
+if [ $# -lt 1 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+INPUT="$1"
+INTERVAL="${2:-5}"
+
+if [ ! -f "$INPUT" ]; then
+    echo "Error: file not found: $INPUT" >&2
+    exit 1
+fi
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "Error: ffmpeg not installed. Run: brew install ffmpeg" >&2
+    exit 1
+fi
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+# Dedicated parent folder so loom artifacts stay grouped, not sprawling
+# across the top of Downloads.
+PARENT="$HOME/Downloads/loom-walkthroughs"
+mkdir -p "$PARENT"
+OUTDIR="$PARENT/loom-prep-$STAMP"
+mkdir -p "$OUTDIR"
+
+DURATION_RAW=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT" 2>/dev/null || echo "0")
+DURATION=${DURATION_RAW%.*}
+[ -z "$DURATION" ] && DURATION=0
+
+DUR_MIN=$((DURATION / 60))
+DUR_SEC=$((DURATION % 60))
+
+echo "Video:    $(basename "$INPUT")"
+echo "Duration: ${DUR_MIN}m ${DUR_SEC}s (${DURATION}s)"
+echo "Interval: every ${INTERVAL}s"
+echo "Output:   $OUTDIR"
+echo
+echo "Extracting frames…"
+
+ffmpeg -hide_banner -loglevel error -i "$INPUT" \
+    -vf "fps=1/${INTERVAL}" \
+    -q:v 4 \
+    "$OUTDIR/frame_%03d.jpg"
+
+FRAME_COUNT=$(ls "$OUTDIR"/frame_*.jpg 2>/dev/null | wc -l | tr -d ' ')
+echo "✓ Extracted $FRAME_COUNT frames."
+echo
+
+# ---------- contact sheets ----------
+# 5x5 grid per sheet (up to 25 frames), thumbnails at ~480x270.
+# Claude reads sheets first for whole-recording scan, then drills into
+# individual frames in this folder when detail is needed.
+#
+# Implementation note: ffmpeg's image2 demuxer reads ALL frames matching
+# the input pattern (it can't be told "stop at N"), so naively tiling
+# from frame_%03d.jpg produces multiple output frames and breaks the
+# single-file output. We stage symlinks per sheet so each ffmpeg call
+# sees exactly the frames it needs.
+SHEET_DIR="$OUTDIR/sheets"
+mkdir -p "$SHEET_DIR"
+PER_SHEET=25
+SHEET_NUM=1
+START=1
+echo "Building contact sheets (5×5 grid, up to ${PER_SHEET} frames each)…"
+while [ $START -le $FRAME_COUNT ]; do
+    END=$(( START + PER_SHEET - 1 ))
+    [ $END -gt $FRAME_COUNT ] && END=$FRAME_COUNT
+    COUNT=$((END - START + 1))
+    SHEET_PATH="$SHEET_DIR/sheet_$(printf "%03d" $SHEET_NUM)_frames_$(printf "%03d" $START)-$(printf "%03d" $END).jpg"
+
+    # Stage exactly the frames for this sheet as symlinks with sequential
+    # numbering starting at 1, so ffmpeg's image2 demuxer reads exactly
+    # those and nothing else.
+    STAGE=$(mktemp -d)
+    j=1
+    for src_num in $(seq $START $END); do
+        ln -s "$OUTDIR/$(printf 'frame_%03d.jpg' $src_num)" "$STAGE/$(printf 'in_%03d.jpg' $j)"
+        j=$((j + 1))
+    done
+
+    # tile=5x5:nb_frames=$COUNT lets partial sheets (last batch <25) emit
+    # without waiting for a full grid.
+    ffmpeg -hide_banner -loglevel error \
+        -i "$STAGE/in_%03d.jpg" \
+        -vf "scale=480:-1,tile=5x5:nb_frames=${COUNT}:color=black" \
+        -frames:v 1 \
+        -q:v 4 \
+        "$SHEET_PATH"
+    rm -rf "$STAGE"
+
+    echo "  ✓ sheet $(printf "%03d" $SHEET_NUM): frames ${START}-${END} → $(basename "$SHEET_PATH")"
+    SHEET_NUM=$((SHEET_NUM + 1))
+    START=$((END + 1))
+done
+SHEET_COUNT=$(ls "$SHEET_DIR"/sheet_*.jpg 2>/dev/null | wc -l | tr -d ' ')
+echo "✓ Built $SHEET_COUNT contact sheet(s) in $SHEET_DIR"
+echo
+
+# ---------- manifest.md ----------
+MANIFEST="$OUTDIR/manifest.md"
+{
+    echo "# Loom walkthrough — $(basename "$INPUT")"
+    echo
+    echo "- Source: \`$INPUT\`"
+    echo "- Duration: ${DUR_MIN}m ${DUR_SEC}s"
+    echo "- Frame interval: every ${INTERVAL}s"
+    echo "- Extracted: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "- Frame count: $FRAME_COUNT"
+    echo
+    echo "## Frames with timestamps"
+    echo
+    echo "| # | Timestamp | Path |"
+    echo "|---|---|---|"
+} > "$MANIFEST"
+
+i=1
+for FRAME in "$OUTDIR"/frame_*.jpg; do
+    OFFSET_SECONDS=$(( (i - 1) * INTERVAL ))
+    HH=$(printf "%02d" $((OFFSET_SECONDS / 3600)))
+    MM=$(printf "%02d" $(((OFFSET_SECONDS % 3600) / 60)))
+    SS=$(printf "%02d" $((OFFSET_SECONDS % 60)))
+    if [ "$HH" = "00" ]; then
+        TS="${MM}:${SS}"
+    else
+        TS="${HH}:${MM}:${SS}"
+    fi
+    echo "| $(printf "%03d" $i) | ${TS} | \`$(basename "$FRAME")\` |" >> "$MANIFEST"
+    i=$((i + 1))
+done
+
+# ---------- scaffold.md (paste-to-Claude) ----------
+SCAFFOLD="$OUTDIR/scaffold.md"
+{
+    echo "## Loom walkthrough — $(basename "$INPUT")"
+    echo
+    echo "- Duration: ${DUR_MIN}m ${DUR_SEC}s"
+    echo "- $FRAME_COUNT frames at 1 every ${INTERVAL}s"
+    echo "- $SHEET_COUNT contact sheet(s) (5×5 grids) at: \`$SHEET_DIR\`"
+    echo "- Individual frames at: \`$OUTDIR\`"
+    echo
+    echo "**Claude — please examine all contact sheets first for whole-recording context, then drill into specific individual frames as needed.** Both folders contain everything; no frames have been filtered out."
+    echo
+    echo "### Transcript"
+    echo
+    echo "<paste Loom transcript here — sidebar → Transcript → Copy>"
+    echo
+    echo "### Frame index"
+    echo
+    i=1
+    for FRAME in "$OUTDIR"/frame_*.jpg; do
+        OFFSET_SECONDS=$(( (i - 1) * INTERVAL ))
+        HH=$(printf "%02d" $((OFFSET_SECONDS / 3600)))
+        MM=$(printf "%02d" $(((OFFSET_SECONDS % 3600) / 60)))
+        SS=$(printf "%02d" $((OFFSET_SECONDS % 60)))
+        if [ "$HH" = "00" ]; then
+            TS="${MM}:${SS}"
+        else
+            TS="${HH}:${MM}:${SS}"
+        fi
+        echo "- ${TS}  \`$(basename "$FRAME")\`"
+        i=$((i + 1))
+    done
+} > "$SCAFFOLD"
+
+# Copy scaffold to clipboard (macOS pbcopy)
+if command -v pbcopy >/dev/null 2>&1; then
+    pbcopy < "$SCAFFOLD"
+    CLIPBOARD_NOTE="✓ scaffold.md copied to clipboard — paste into chat."
+else
+    CLIPBOARD_NOTE="(pbcopy not found — open $SCAFFOLD manually and copy.)"
+fi
+
+echo
+echo "  manifest:  $MANIFEST"
+echo "  scaffold:  $SCAFFOLD"
+echo "  $CLIPBOARD_NOTE"
+echo
+echo "Opening folder…"
+open "$OUTDIR" >/dev/null 2>&1 || true
